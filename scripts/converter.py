@@ -56,6 +56,7 @@ def gen_orm(
         orm.CreateOutput('b', Sdf.ValueTypeNames.Float)
         return orm
 
+
 def gen_albedo(
             stage,
             uv,
@@ -103,7 +104,24 @@ def gen_uv(
         return uv
 
 
-def gen_output(
+def gen_output_metallic(
+            stage,
+            normal,
+            albedo,
+            orm):
+        print('Generating PBR output shader...')
+        output = UsdShade.Shader.Define(stage, SHADER)
+        output.CreateIdAttr('UsdPreviewSurface')
+        output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(0)
+        output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
+        output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
+        output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
+        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
+        output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
+        return output
+
+
+def gen_output_specular(
             stage,
             normal,
             diffuse,
@@ -115,10 +133,6 @@ def gen_output(
         output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(1)
         output.CreateInput('metallic', Sdf.ValueTypeNames.Float).Set(0)
         output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
-        # output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
-        # output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
-        # output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
-        # output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
         output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuse.ConnectableAPI(), 'rgb')
         output.CreateInput('specularColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(specular.ConnectableAPI(),
                                                                                         'rgb')
@@ -128,7 +142,8 @@ def gen_output(
 
 def gen_material(
             stage,
-            texture_format):
+            texture_format,
+            metallic):
         print('Generating material...')
         material = UsdShade.Material.Define(stage, MATERIAL)
         material.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token).Set('st')
@@ -140,12 +155,20 @@ def gen_material(
 
         # Create our texture shaders
         normal = gen_normal(stage, uv, texture_format)
-        diffuse = gen_diffuse(stage, uv, texture_format)
-        specular = gen_specular(stage, uv, texture_format)
-        roughness = gen_roughness(stage, uv, texture_format)
+        if metallic:
+                albedo = gen_albedo(stage, uv, texture_format)
+                orm = gen_orm(stage, uv, texture_format)
 
-        # Attach our material inputs to a new output shader
-        output = gen_output(stage, normal, diffuse, specular, roughness)
+                # Attach our material inputs to a new output shader
+                output = gen_output_metallic(stage, normal, albedo, orm)
+        else:
+                diffuse = gen_diffuse(stage, uv, texture_format)
+                specular = gen_specular(stage, uv, texture_format)
+                roughness = gen_roughness(stage, uv, texture_format)
+
+                # Attach our material inputs to a new output shader
+                output = gen_output_specular(stage, normal, diffuse, specular, roughness)
+
         output.CreateInput('ior', Sdf.ValueTypeNames.Float).ConnectToSource(material.GetInput('ior'))
 
         # Bind our output shader to the surface material
@@ -267,8 +290,28 @@ def gen_model(stage, model_path):
         mesh.GetSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
         return mesh
 
+def export_metallic(
+            base_name,
+            texture_format,
+            normal_path,
+            albedo_path,
+            orm_path):
+        print('Compressing usdz archive...')
+        # Create a writer for the target usdz file
+        writer = Sdf.ZipFileWriter.CreateNew(f'{base_name}.usdz')
 
-def export_usdz(
+        # Add files to the archive
+        writer.AddFile(f'{base_name}.usda', 'model.usda')
+        writer.AddFile(normal_path, f'textures/normal.{texture_format}')
+        writer.AddFile(albedo_path, f'textures/albedo.{texture_format}')
+        writer.AddFile(orm_path, f'textures/orm.{texture_format}')
+
+        # Finalize the file
+        writer.Save()
+        pass
+
+
+def export_specular(
             base_name,
             texture_format,
             normal_path,
@@ -323,8 +366,21 @@ def parse_args():
                 '--roughness',
                 type=str,
                 help='Roughness texture file location')
+        parser.add_argument(
+                '--metallic',
+                action='store_true',
+                help='Use metallic workflow')
+        parser.add_argument(
+                '--albedo',
+                type=str,
+                help='Albedo texture file location')
+        parser.add_argument(
+                '--orm',
+                type=str,
+                help='ORM texture file location')
 
         return parser.parse_known_args(sys.argv)[0]
+
 
 def main():
         if len(sys.argv) < 6:
@@ -343,7 +399,7 @@ def main():
         mesh = gen_model(stage, args.model)
 
         # Generate our new material
-        material = gen_material(stage, args.format)
+        material = gen_material(stage, args.format, args.metallic)
 
         # Bind the material to the mesh
         UsdShade.MaterialBindingAPI(mesh).Bind(material)
@@ -352,7 +408,10 @@ def main():
         stage.Export(f'{base_name}.usda')
 
         # Pack and export our model
-        export_usdz(base_name, args.format, args.normal, args.diffuse, args.specular, args.roughness)
+        if args.metallic:
+                export_metallic(base_name, args.format, args.normal, args.albedo, args.orm)
+        else:
+                export_specular(base_name, args.format, args.normal, args.diffuse, args.specular, args.roughness)
 
         # Clean up no longer needed files
         cleanup(base_name)
