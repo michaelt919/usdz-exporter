@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import struct
@@ -270,28 +271,53 @@ def cleanup(base_name):
         pass
 
 
+def parse_args():
+        parser = argparse.ArgumentParser(description='Process custom Blender arguments.')
+        parser.add_argument(
+                '--model',
+                type=str,
+                help='GLTF model location')
+        parser.add_argument(
+                '--format',
+                type=str,
+                help='The file format of the textures')
+        parser.add_argument(
+                '--normal',
+                type=str,
+                help='Normal texture file location')
+        parser.add_argument(
+                '--diffuse',
+                type=str,
+                help='Diffuse texture file location')
+        parser.add_argument(
+                '--specular',
+                type=str,
+                help='Specular texture file location')
+        parser.add_argument(
+                '--roughness',
+                type=str,
+                help='Roughness texture file location')
+
+        return parser.parse_known_args(sys.argv)[0]
+
 def main():
         if len(sys.argv) < 7:
                 print('Invalid number of arguments.')
                 sys.exit(1)
-        glb_file = sys.argv[1]
-        texture_format = sys.argv[2]
-        normal_texture = sys.argv[3]
-        diffuse_texture = sys.argv[4]
-        specular_texture = sys.argv[5]
-        roughness_texture = sys.argv[6]
+        args = parse_args()
+
 
         # Get the base name of the glb file
-        base_name = glb_file.rsplit('.', 1)[0]
+        base_name = args.model.rsplit('.', 1)[0]
 
         # Open the new usd on the stage
         stage = Usd.Stage.CreateNew(f'{base_name}.usda')
 
         # Generate mesh from glb
-        mesh = gen_model(stage, glb_file)
+        mesh = gen_model(stage, args.model)
 
         # Generate our new material
-        material = gen_material(stage, texture_format)
+        material = gen_material(stage, args.format)
 
         # Bind the material to the mesh
         UsdShade.MaterialBindingAPI(mesh).Bind(material)
@@ -300,7 +326,7 @@ def main():
         stage.Export(f'{base_name}.usda')
 
         # Pack and export our model
-        export_usdz(base_name, texture_format, normal_texture, diffuse_texture, specular_texture, roughness_texture)
+        export_usdz(base_name, args.format, args.normal, args.diffuse, args.specular, args.roughness)
 
         # Clean up no longer needed files
         cleanup(base_name)
