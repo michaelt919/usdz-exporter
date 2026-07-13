@@ -11,6 +11,9 @@ MATERIAL = ROOT_FORM.AppendChild('material')
 
 UV = MATERIAL.AppendChild('st')
 SHADER = MATERIAL.AppendChild('pbr')
+
+ORM = MATERIAL.AppendChild('orm')
+ALBEDO = MATERIAL.AppendChild('albedo')
 NORMAL = MATERIAL.AppendChild('normal')
 DIFFUSE = MATERIAL.AppendChild('diffuse')
 SPECULAR = MATERIAL.AppendChild('specular')
@@ -41,6 +44,25 @@ def gen_normal(
         normal.CreateInput('wrapS', Sdf.ValueTypeNames.Token).Set('black')
         normal.CreateInput('wrapT', Sdf.ValueTypeNames.Token).Set('clamp')
         return normal
+
+
+def gen_orm(
+            stage,
+            uv,
+            texture_format):
+        orm = gen_uv_texture(stage, uv, ORM, f'{TEXTURE_PATH}/orm.{texture_format}')
+        orm.CreateOutput('r', Sdf.ValueTypeNames.Float)
+        orm.CreateOutput('g', Sdf.ValueTypeNames.Float)
+        orm.CreateOutput('b', Sdf.ValueTypeNames.Float)
+        return orm
+
+def gen_albedo(
+            stage,
+            uv,
+            texture_format):
+        albedo = gen_uv_texture(stage, uv, ALBEDO, f'{TEXTURE_PATH}/albedo.{texture_format}')
+        albedo.CreateOutput('rgb', Sdf.ValueTypeNames.Float3)
+        return albedo
 
 
 def gen_diffuse(
@@ -93,6 +115,10 @@ def gen_output(
         output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(1)
         output.CreateInput('metallic', Sdf.ValueTypeNames.Float).Set(0)
         output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
+        # output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
+        # output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
+        # output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
+        # output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
         output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuse.ConnectableAPI(), 'rgb')
         output.CreateInput('specularColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(specular.ConnectableAPI(),
                                                                                         'rgb')
@@ -107,7 +133,7 @@ def gen_material(
         material = UsdShade.Material.Define(stage, MATERIAL)
         material.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token).Set('st')
         material.CreateInput('frame:tangentsPrimvarName', Sdf.ValueTypeNames.Token).Set('tangents')
-        material.CreateInput('ior', Sdf.ValueTypeNames.Float).Set(5.0)
+        material.CreateInput('ior', Sdf.ValueTypeNames.Float).Set(1.5)
 
         # Find and attach our UV map to our shader
         uv = gen_uv(stage, material)
@@ -301,11 +327,11 @@ def parse_args():
         return parser.parse_known_args(sys.argv)[0]
 
 def main():
-        if len(sys.argv) < 7:
+        if len(sys.argv) < 6:
                 print('Invalid number of arguments.')
                 sys.exit(1)
-        args = parse_args()
 
+        args = parse_args()
 
         # Get the base name of the glb file
         base_name = args.model.rsplit('.', 1)[0]
