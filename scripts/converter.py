@@ -45,8 +45,7 @@ def gen_normal(
 def gen_diffuse(
             stage,
             uv,
-            texture_format
-):
+            texture_format):
         diffuse = gen_uv_texture(stage, uv, DIFFUSE, f'{TEXTURE_PATH}/diffuse.{texture_format}')
         diffuse.CreateOutput('rgb', Sdf.ValueTypeNames.Float3)
         return diffuse
@@ -55,8 +54,7 @@ def gen_diffuse(
 def gen_specular(
             stage,
             uv,
-            texture_format
-):
+            texture_format):
         specular = gen_uv_texture(stage, uv, SPECULAR, f'{TEXTURE_PATH}/specular.{texture_format}')
         specular.CreateOutput('rgb', Sdf.ValueTypeNames.Float3)
         return specular
@@ -87,12 +85,12 @@ def gen_output(
             normal,
             diffuse,
             specular,
-            roughness
-):
+            roughness):
         print('Generating PBR output shader...')
         output = UsdShade.Shader.Define(stage, SHADER)
         output.CreateIdAttr('UsdPreviewSurface')
         output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(1)
+        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).Set(0)
         output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
         output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuse.ConnectableAPI(), 'rgb')
         output.CreateInput('specularColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(specular.ConnectableAPI(),
@@ -103,11 +101,12 @@ def gen_output(
 
 def gen_material(
             stage,
-            texture_format
-):
+            texture_format):
         print('Generating material...')
         material = UsdShade.Material.Define(stage, MATERIAL)
         material.CreateInput('frame:stPrimvarName', Sdf.ValueTypeNames.Token).Set('st')
+        material.CreateInput('frame:tangentsPrimvarName', Sdf.ValueTypeNames.Token).Set('tangents')
+        material.CreateInput('ior', Sdf.ValueTypeNames.Float).Set(5.0)
 
         # Find and attach our UV map to our shader
         uv = gen_uv(stage, material)
@@ -120,6 +119,7 @@ def gen_material(
 
         # Attach our material inputs to a new output shader
         output = gen_output(stage, normal, diffuse, specular, roughness)
+        output.CreateInput('ior', Sdf.ValueTypeNames.Float).ConnectToSource(material.GetInput('ior'))
 
         # Bind our output shader to the surface material
         material.CreateSurfaceOutput().ConnectToSource(output.ConnectableAPI(), 'surface')
@@ -212,6 +212,30 @@ def gen_model(stage, model_path):
         st.Set(uv)
         st.SetIndices(range(accessor.count))
 
+        # Get tangent data
+        print('Translating tangent data...')
+        accessor = gltf.accessors[primitive.attributes.TANGENT]
+        bufferView = gltf.bufferViews[accessor.bufferView]
+        buffer = gltf.buffers[bufferView.buffer]
+        data = gltf.get_data_from_buffer_uri(buffer.uri)
+
+        # Pull each tuple (in 4s) from the data
+        tangent = []
+        for i in range(accessor.count):
+                index = bufferView.byteOffset + accessor.byteOffset + i * 16
+                d = data[index:index + 16]
+                v = struct.unpack("<ffff", d)
+                tangent.append(v)
+
+        # Bind UV to ST in USD mesh
+        tangents = UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
+                'tangents',
+                Sdf.ValueTypeNames.Float4Array,
+                UsdGeom.Tokens.vertex
+        )
+        tangents.Set(tangent)
+        tangents.SetIndices(range(accessor.count))
+
         print('Applying miscellaneous attributes...')
         mesh.GetSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
         return mesh
@@ -223,8 +247,7 @@ def export_usdz(
             normal_path,
             diffuse_path,
             specular_path,
-            roughness_path
-):
+            roughness_path):
         print('Compressing usdz archive...')
         # Create a writer for the target usdz file
         writer = Sdf.ZipFileWriter.CreateNew(f'{base_name}.usdz')
