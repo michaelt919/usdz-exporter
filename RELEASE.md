@@ -1,12 +1,11 @@
 ## Features
 
-- USDZ command-line exporter
-- Material generation
-- Error logging
-- Slight cleanup
+- More robust logging
+- More robust arguments
+- Tangent data
+- Better specular rendering
 
 ## To-do
 
-- More robust logging
 - More material nodes
 - (maybe) MaterialX

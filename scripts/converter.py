@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import struct
@@ -105,22 +106,23 @@ def gen_uv(
 def gen_output(
             stage,
             normal,
-            albedo,
-            orm):
+            diffuse,
+            specular,
+            roughness):
         print('Generating PBR output shader...')
         output = UsdShade.Shader.Define(stage, SHADER)
         output.CreateIdAttr('UsdPreviewSurface')
-        # output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(1)
-        # output.CreateInput('metallic', Sdf.ValueTypeNames.Float).Set(0)
+        output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(1)
+        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).Set(0)
         output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
-        output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
-        output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
-        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
-        output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
-        # output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuse.ConnectableAPI(), 'rgb')
-        # output.CreateInput('specularColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(specular.ConnectableAPI(),
-        #                                                                                 'rgb')
-        # output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(roughness.ConnectableAPI(), 'r')
+        # output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
+        # output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
+        # output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
+        # output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
+        output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(diffuse.ConnectableAPI(), 'rgb')
+        output.CreateInput('specularColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(specular.ConnectableAPI(),
+                                                                                        'rgb')
+        output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(roughness.ConnectableAPI(), 'r')
         return output
 
 
@@ -138,14 +140,12 @@ def gen_material(
 
         # Create our texture shaders
         normal = gen_normal(stage, uv, texture_format)
-        # diffuse = gen_diffuse(stage, uv, texture_format)
-        # specular = gen_specular(stage, uv, texture_format)
-        # roughness = gen_roughness(stage, uv, texture_format)
-        orm = gen_orm(stage, uv, texture_format)
-        albedo = gen_albedo(stage, uv, texture_format)
+        diffuse = gen_diffuse(stage, uv, texture_format)
+        specular = gen_specular(stage, uv, texture_format)
+        roughness = gen_roughness(stage, uv, texture_format)
 
         # Attach our material inputs to a new output shader
-        output = gen_output(stage, normal, albedo, orm)
+        output = gen_output(stage, normal, diffuse, specular, roughness)
         output.CreateInput('ior', Sdf.ValueTypeNames.Float).ConnectToSource(material.GetInput('ior'))
 
         # Bind our output shader to the surface material
@@ -272,8 +272,9 @@ def export_usdz(
             base_name,
             texture_format,
             normal_path,
-            albedo_path,
-            orm_path):
+            diffuse_path,
+            specular_path,
+            roughness_path):
         print('Compressing usdz archive...')
         # Create a writer for the target usdz file
         writer = Sdf.ZipFileWriter.CreateNew(f'{base_name}.usdz')
@@ -281,8 +282,9 @@ def export_usdz(
         # Add files to the archive
         writer.AddFile(f'{base_name}.usda', 'model.usda')
         writer.AddFile(normal_path, f'textures/normal.{texture_format}')
-        writer.AddFile(albedo_path, f'textures/albedo.{texture_format}')
-        writer.AddFile(orm_path, f'textures/orm.{texture_format}')
+        writer.AddFile(diffuse_path, f'textures/diffuse.{texture_format}')
+        writer.AddFile(specular_path, f'textures/specular.{texture_format}')
+        writer.AddFile(roughness_path, f'textures/roughness.{texture_format}')
 
         # Finalize the file
         writer.Save()
@@ -295,28 +297,53 @@ def cleanup(base_name):
         pass
 
 
+def parse_args():
+        parser = argparse.ArgumentParser(description='Process custom Blender arguments.')
+        parser.add_argument(
+                '--model',
+                type=str,
+                help='GLTF model location')
+        parser.add_argument(
+                '--format',
+                type=str,
+                help='The file format of the textures')
+        parser.add_argument(
+                '--normal',
+                type=str,
+                help='Normal texture file location')
+        parser.add_argument(
+                '--diffuse',
+                type=str,
+                help='Diffuse texture file location')
+        parser.add_argument(
+                '--specular',
+                type=str,
+                help='Specular texture file location')
+        parser.add_argument(
+                '--roughness',
+                type=str,
+                help='Roughness texture file location')
+
+        return parser.parse_known_args(sys.argv)[0]
+
 def main():
         if len(sys.argv) < 6:
                 print('Invalid number of arguments.')
                 sys.exit(1)
-        glb_file = sys.argv[1]
-        texture_format = sys.argv[2]
-        normal_texture = sys.argv[3]
-        albedo_texture = sys.argv[4]
-        orm_texture = sys.argv[5]
-        # roughness_texture = sys.argv[6]
+
+        args = parse_args()
 
         # Get the base name of the glb file
-        base_name = glb_file.rsplit('.', 1)[0]
+        base_name = args.model.rsplit('.', 1)[0]
 
         # Open the new usd on the stage
         stage = Usd.Stage.CreateNew(f'{base_name}.usda')
 
         # Generate mesh from glb
-        mesh = gen_model(stage, glb_file)
+        mesh = gen_model(stage, args.model)
 
         # Generate our new material
-        material = gen_material(stage, texture_format)
+        material = gen_material(stage, args.format)
 
         # Bind the material to the mesh
         UsdShade.MaterialBindingAPI(mesh).Bind(material)
@@ -325,7 +352,7 @@ def main():
         stage.Export(f'{base_name}.usda')
 
         # Pack and export our model
-        export_usdz(base_name, texture_format, normal_texture, albedo_texture, orm_texture)
+        export_usdz(base_name, args.format, args.normal, args.diffuse, args.specular, args.roughness)
 
         # Clean up no longer needed files
         cleanup(base_name)
