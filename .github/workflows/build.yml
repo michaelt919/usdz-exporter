@@ -26,9 +26,6 @@ jobs:
           - os: macos-latest
             artifact_name: usdz-exporter-${{ github.ref_name }}-macos
             asset_path: dist/*
-          - os: macos-13
-            artifact_name: usdz-exporter-${{ github.ref_name }}-intel-macos
-            asset_path: dist/*
 
     steps:
       - name: Check out repository
