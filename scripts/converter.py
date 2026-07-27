@@ -12,12 +12,13 @@ MATERIAL = ROOT_FORM.AppendChild('material')
 UV = MATERIAL.AppendChild('st')
 SHADER = MATERIAL.AppendChild('pbr')
 
-ORM = MATERIAL.AppendChild('orm')
 ALBEDO = MATERIAL.AppendChild('albedo')
 NORMAL = MATERIAL.AppendChild('normal')
 DIFFUSE = MATERIAL.AppendChild('diffuse')
 SPECULAR = MATERIAL.AppendChild('specular')
 ROUGHNESS = MATERIAL.AppendChild('roughness')
+OCCLUSION = MATERIAL.AppendChild('occlusion')
+METALLIC = MATERIAL.AppendChild('metallic')
 
 TEXTURE_PATH = 'textures'
 
@@ -46,15 +47,22 @@ def gen_normal(
         return normal
 
 
-def gen_orm(
+def gen_occlusion(
             stage,
             uv,
             texture_format):
-        orm = gen_uv_texture(stage, uv, ORM, f'{TEXTURE_PATH}/orm.{texture_format}')
-        orm.CreateOutput('r', Sdf.ValueTypeNames.Float)
-        orm.CreateOutput('g', Sdf.ValueTypeNames.Float)
-        orm.CreateOutput('b', Sdf.ValueTypeNames.Float)
-        return orm
+        occlusion = gen_uv_texture(stage, uv, OCCLUSION, f'{TEXTURE_PATH}/occlusion.{texture_format}')
+        occlusion.CreateOutput('r', Sdf.ValueTypeNames.Float)
+        return occlusion
+
+
+def gen_metallic(
+            stage,
+            uv,
+            texture_format):
+        metallic = gen_uv_texture(stage, uv, METALLIC, f'{TEXTURE_PATH}/metallic.{texture_format}')
+        metallic.CreateOutput('b', Sdf.ValueTypeNames.Float)
+        return metallic
 
 
 def gen_albedo(
@@ -108,15 +116,17 @@ def gen_output_metallic(
             stage,
             normal,
             albedo,
-            orm):
+            occlusion,
+            roughness,
+            metallic):
         print('Generating PBR output shader...')
         output = UsdShade.Shader.Define(stage, SHADER)
         output.CreateIdAttr('UsdPreviewSurface')
         output.CreateInput('useSpecularWorkflow', Sdf.ValueTypeNames.Int).Set(0)
         output.CreateInput('normal', Sdf.ValueTypeNames.Normal3f).ConnectToSource(normal.ConnectableAPI(), 'rgb')
-        output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'r')
-        output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'g')
-        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(orm.ConnectableAPI(), 'b')
+        output.CreateInput('occlusion', Sdf.ValueTypeNames.Float).ConnectToSource(occlusion.ConnectableAPI(), 'r')
+        output.CreateInput('roughness', Sdf.ValueTypeNames.Float).ConnectToSource(roughness.ConnectableAPI(), 'g')
+        output.CreateInput('metallic', Sdf.ValueTypeNames.Float).ConnectToSource(metallic.ConnectableAPI(), 'b')
         output.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).ConnectToSource(albedo.ConnectableAPI(), 'rgb')
         return output
 
@@ -157,10 +167,12 @@ def gen_material(
         normal = gen_normal(stage, uv, texture_format)
         if metallic:
                 albedo = gen_albedo(stage, uv, texture_format)
-                orm = gen_orm(stage, uv, texture_format)
+                occlusion = gen_occlusion(stage, uv, texture_format)
+                roughness = gen_roughness(stage, uv, texture_format)
+                metallic = gen_metallic(stage, uv, texture_format)
 
                 # Attach our material inputs to a new output shader
-                output = gen_output_metallic(stage, normal, albedo, orm)
+                output = gen_output_metallic(stage, normal, albedo, occlusion, roughness, metallic)
         else:
                 diffuse = gen_diffuse(stage, uv, texture_format)
                 specular = gen_specular(stage, uv, texture_format)
@@ -290,12 +302,15 @@ def gen_model(stage, model_path):
         mesh.GetSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
         return mesh
 
+
 def export_metallic(
             base_name,
             texture_format,
             normal_path,
             albedo_path,
-            orm_path):
+            occlusion_path,
+            roughness_path,
+            metallic_path):
         print('Compressing usdz archive...')
         # Create a writer for the target usdz file
         writer = Sdf.ZipFileWriter.CreateNew(f'{base_name}.usdz')
@@ -304,7 +319,9 @@ def export_metallic(
         writer.AddFile(f'{base_name}.usda', 'model.usda')
         writer.AddFile(normal_path, f'textures/normal.{texture_format}')
         writer.AddFile(albedo_path, f'textures/albedo.{texture_format}')
-        writer.AddFile(orm_path, f'textures/orm.{texture_format}')
+        writer.AddFile(occlusion_path, f'textures/occlusion.{texture_format}')
+        writer.AddFile(roughness_path, f'textures/roughness.{texture_format}')
+        writer.AddFile(metallic_path, f'textures/metallic.{texture_format}')
 
         # Finalize the file
         writer.Save()
@@ -341,7 +358,7 @@ def cleanup(base_name):
 
 
 def parse_args():
-        parser = argparse.ArgumentParser(description='Process custom Blender arguments.')
+        parser = argparse.ArgumentParser(description='Options for exporting USDZ in different ways.')
         parser.add_argument(
                 '--model',
                 type=str,
@@ -367,7 +384,7 @@ def parse_args():
                 type=str,
                 help='Roughness texture file location')
         parser.add_argument(
-                '--metallic',
+                '--use-metallic',
                 action='store_true',
                 help='Use metallic workflow')
         parser.add_argument(
@@ -375,9 +392,13 @@ def parse_args():
                 type=str,
                 help='Albedo texture file location')
         parser.add_argument(
-                '--orm',
+                '--occlusion',
                 type=str,
-                help='ORM texture file location')
+                help='Occlusion texture file location')
+        parser.add_argument(
+                '--metallic',
+                type=str,
+                help='Metallic texture file location')
 
         return parser.parse_known_args(sys.argv)[0]
 
@@ -399,17 +420,18 @@ def main():
         mesh = gen_model(stage, args.model)
 
         # Generate our new material
-        material = gen_material(stage, args.format, args.metallic)
+        material = gen_material(stage, args.format, args.use_metallic)
 
         # Bind the material to the mesh
         UsdShade.MaterialBindingAPI(mesh).Bind(material)
 
-        # Write our material graph to the usda file
+        # Write our translated vertices and material graph to the usda file
         stage.Export(f'{base_name}.usda')
 
         # Pack and export our model
-        if args.metallic:
-                export_metallic(base_name, args.format, args.normal, args.albedo, args.orm)
+        if args.use_metallic:
+                export_metallic(base_name, args.format, args.normal, args.albedo, args.occlusion, args.roughness,
+                                args.metallic)
         else:
                 export_specular(base_name, args.format, args.normal, args.diffuse, args.specular, args.roughness)
 
