@@ -1,6 +1,6 @@
 ## Features
 
-- Added metallic and required fields as an option
+- Split ORM textures for more broad compatibility
 
 ## To-do
 
