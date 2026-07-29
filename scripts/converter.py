@@ -367,11 +367,6 @@ def parse_args():
                 help='GLTF model location',
                 required=True)
         parser.add_argument(
-                '--format',
-                type=str,
-                help='The file format of the textures',
-                required=True)
-        parser.add_argument(
                 '--normal',
                 type=str,
                 help='Normal texture file location',
@@ -381,6 +376,11 @@ def parse_args():
                 type=str,
                 help='Roughness texture file location',
                 required=True)
+        parser.add_argument(
+                '--format',
+                type=str,
+                help='The file format of the textures',
+                default="png")
         parser.add_argument(
                 '--use-metallic',
                 action='store_true',
