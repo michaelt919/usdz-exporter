@@ -52,6 +52,7 @@ def gen_occlusion(
             uv,
             texture_format):
         occlusion = gen_uv_texture(stage, uv, OCCLUSION, f'{TEXTURE_PATH}/occlusion.{texture_format}')
+        occlusion.CreateInput('fallback', Sdf.ValueTypeNames.Float4).Set((1, 0, 0, 1))
         occlusion.CreateOutput('r', Sdf.ValueTypeNames.Float)
         return occlusion
 
@@ -319,7 +320,8 @@ def export_metallic(
         writer.AddFile(f'{base_name}.usda', 'model.usda')
         writer.AddFile(normal_path, f'textures/normal.{texture_format}')
         writer.AddFile(albedo_path, f'textures/albedo.{texture_format}')
-        writer.AddFile(occlusion_path, f'textures/occlusion.{texture_format}')
+        if os.path.isfile(occlusion_path):
+                writer.AddFile(occlusion_path, f'textures/occlusion.{texture_format}')
         writer.AddFile(roughness_path, f'textures/roughness.{texture_format}')
         writer.AddFile(metallic_path, f'textures/metallic.{texture_format}')
 
@@ -362,43 +364,47 @@ def parse_args():
         parser.add_argument(
                 '--model',
                 type=str,
-                help='GLTF model location')
+                help='GLTF model location',
+                required=True)
         parser.add_argument(
                 '--format',
                 type=str,
-                help='The file format of the textures')
+                help='The file format of the textures',
+                required=True)
         parser.add_argument(
                 '--normal',
                 type=str,
-                help='Normal texture file location')
-        parser.add_argument(
-                '--diffuse',
-                type=str,
-                help='Diffuse texture file location')
-        parser.add_argument(
-                '--specular',
-                type=str,
-                help='Specular texture file location')
+                help='Normal texture file location',
+                required=True)
         parser.add_argument(
                 '--roughness',
                 type=str,
-                help='Roughness texture file location')
+                help='Roughness texture file location',
+                required=True)
         parser.add_argument(
                 '--use-metallic',
                 action='store_true',
                 help='Use metallic workflow')
         parser.add_argument(
+                '--diffuse',
+                type=str,
+                help='(Specular) Diffuse texture file location')
+        parser.add_argument(
+                '--specular',
+                type=str,
+                help='(Specular) Specular texture file location')
+        parser.add_argument(
                 '--albedo',
                 type=str,
-                help='Albedo texture file location')
-        parser.add_argument(
-                '--occlusion',
-                type=str,
-                help='Occlusion texture file location')
+                help='(Metallic) Albedo texture file location')
         parser.add_argument(
                 '--metallic',
                 type=str,
-                help='Metallic texture file location')
+                help='(Metallic) Metallic texture file location')
+        parser.add_argument(
+                '--occlusion',
+                type=str,
+                help='(Optional) Occlusion texture file location')
 
         return parser.parse_known_args(sys.argv)[0]
 
