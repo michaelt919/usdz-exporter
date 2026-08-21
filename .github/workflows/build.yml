@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: usdz-exporter-${{ github.ref_name }}-windows
+            artifact_name: usdz-exporter-${{ github.head_ref || github.ref_name }}-windows
             asset_path: dist/*.exe
           - os: ubuntu-latest
-            artifact_name: usdz-exporter-${{ github.ref_name }}-linux
+            artifact_name: usdz-exporter-${{ github.head_ref || github.ref_name }}-linux
             asset_path: dist/*
           - os: macos-latest
-            artifact_name: usdz-exporter-${{ github.ref_name }}-macos
+            artifact_name: usdz-exporter-${{ github.head_ref || github.ref_name }}-macos
             asset_path: dist/*
 
     steps:
